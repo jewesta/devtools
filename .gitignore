@@ -1,0 +1,15 @@
+# Maven / Java
+**/target/
+**/target-cli/
+*.log
+
+# IDEs
+.idea/
+.vscode/
+.settings/
+.project
+.classpath
+*.iml
+
+# OS
+.DS_Store
