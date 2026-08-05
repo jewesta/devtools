@@ -102,10 +102,21 @@ type resolution. Skipped sources still get formatted. If every source parses
 alone, the batch failure is not attributable to one file and the original error
 is raised rather than an invented explanation.
 
-Two `@throws` tags alone do not reproduce the upstream bug; the wrapped
-`@return` description preceding them is part of the trigger. The minimal shape
-was not isolated, so the regression test keeps a sample close to the real
-source that surfaced it.
+The trigger is a `@return` description that wraps onto a continuation line,
+followed by any `@throws`. It was isolated by varying one factor at a time
+across four samples:
+
+| `@return` | `@throws` | Parses |
+| --- | --- | --- |
+| wrapped | two tags, descriptions on the next line | no |
+| **one line** | two tags, descriptions on the next line | **yes** |
+| wrapped | two tags, descriptions on the tag line | no |
+| wrapped | **one tag** | no |
+
+Tag count and description placement are both irrelevant; unwrapping the
+`@return` is the only change that parses. `@throws` tags with no wrapped
+`@return` in front of them are fine, which is why exactly one source in a
+391-file repository failed: every other `@return` there fits on one line.
 
 ### Recovery is not success
 
@@ -139,8 +150,8 @@ or the upstream defect is fixed. That is the honest result.
 
 ## Open Questions
 
-- The OpenRewrite `visitThrows` defect is worth reporting upstream. Isolating
-  the minimal Javadoc that triggers it is a prerequisite for a useful report.
+- The OpenRewrite `visitThrows` defect is now isolated well enough to report
+  upstream: a wrapped `@return` description followed by any `@throws`.
 - No opt-out exists for a known-unparseable source. A project blocked on an
   upstream defect currently cannot get a green repository-wide assertion. An
   explicit allowance would restore that at the cost of reintroducing a way to

@@ -28,10 +28,12 @@ class RewriteCleanerTest {
 	 * still trails the preceding tag's description the test fails, so it
 	 * searches for a {@code @exception} that was never written and throws.
 	 * <p>
-	 * Two {@code @throws} tags alone do not reproduce it; the wrapped
-	 * {@code @return} description in front of them is part of the trigger. The
-	 * exact minimal shape has not been isolated, so this sample stays close to
-	 * the real source that first surfaced the failure.
+	 * The trigger is a {@code @return} description that wraps onto a
+	 * continuation line, followed by any {@code @throws}. Isolated by varying
+	 * one factor at a time: a single {@code @throws} still fails, moving the
+	 * descriptions onto the tag lines still fails, and unwrapping the
+	 * {@code @return} onto one line is the only change that parses. Tags with
+	 * no wrapped {@code @return} in front of them are fine.
 	 */
 	private static final String UNPARSEABLE = """
 		package example;
