@@ -71,9 +71,47 @@ worktree with "Repository root must contain .git and pom.xml". This made the
 canonical formatter unusable in repositories whose own guidelines mandate
 worktree-per-issue — the formatter could not run where the work happened.
 
+## Unparseable Sources No Longer Abort a Run
+
+A repository-wide sweep of RetroCrawler failed outright with
+`IllegalStateException: Expected to be able to find @exception` while parsing
+`retro-crawler-core`. The failure predates `--select`; the previous
+no-argument path reproduces it exactly.
+
+The cause is upstream. `ReloadableJava21JavadocVisitor.visitThrows` in
+OpenRewrite 8.85.0 chooses which tag to look for with an exact position test:
+
+```java
+boolean throwsKeyword = source.startsWith("@throws", cursor);
+sourceBefore(throwsKeyword ? "@throws" : "@exception");
+```
+
+`sourceBefore` then searches *forward* from the cursor. When the cursor still
+trails the preceding tag's description the position test fails, so the visitor
+searches for an `@exception` that was never written and throws. The Javadoc is
+valid; nothing in the consuming project can be corrected to satisfy it.
+
+The prettify-level defect is that this aborted everything. Cleanup is an
+enrichment, while Eclipse formatting is the guarantee prettify actually makes,
+so one source tripping a parser bug must not stop a 391-file sweep.
+
+`RewriteCleaner` now recovers. When a module fails to parse as a batch, each of
+its sources is parsed alone to identify the offenders, those are reported on
+stderr, and the remaining sources are parsed as one batch so they keep full
+type resolution. Skipped sources still get formatted. If every source parses
+alone, the batch failure is not attributable to one file and the original error
+is raised rather than an invented explanation.
+
+Two `@throws` tags alone do not reproduce the upstream bug; the wrapped
+`@return` description preceding them is part of the trigger. The minimal shape
+was not isolated, so the regression test keeps a sample close to the real
+source that surfaced it.
+
 ## Verification
 
-- `mvn test` passed for the reactor: 19 tests, 0 failures, 0 errors.
+- `mvn test` passed for the reactor: 21 tests, 0 failures, 0 errors.
+- A repository-wide sweep of RetroCrawler now completes: 391 sources, one
+  unparseable source named on stderr, assertion passed.
 - End-to-end from a RetroCrawler issue worktree: `--select uncommitted` found an
   untracked source, formatted it, and applied the OpenRewrite `final` cleanup.
 - Prettify checked itself through the new option. `--select uncommitted` flagged
@@ -82,12 +120,11 @@ worktree-per-issue — the formatter could not run where the work happened.
 
 ## Open Questions
 
-- Repository-wide cleanup of RetroCrawler fails inside OpenRewrite with
-  `IllegalStateException: Expected to be able to find @exception` while parsing
-  `retro-crawler-core`. It predates this issue: `--select repository` reproduces
-  the previous no-argument path exactly and fails identically, and the sources
-  contain no `@exception` tag. Single-file and `uncommitted` runs are
-  unaffected, but `--select branch` inherits the failure whenever it pulls in
-  that module. Needs its own issue.
+- The OpenRewrite `visitThrows` defect is worth reporting upstream. Isolating
+  the minimal Javadoc that triggers it is a prerequisite for a useful report.
+- Sources skipped by the recovery path receive formatting but no cleanup, so a
+  repository-wide `--assert` can pass while those sources still hold cleanup
+  findings. The warning names them; whether `--assert` should fail instead is a
+  policy decision nobody has needed yet.
 - A `staged` scope was considered and left out. It suits a pre-commit hook more
   than an agent, and no caller needs it yet.
