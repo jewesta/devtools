@@ -23,6 +23,10 @@ These instructions apply to the entire repository.
 - A repository root is a directory holding `pom.xml` plus either a `.git`
   directory or a `.git` file containing a `gitdir:` pointer. The second form is
   a linked worktree; do not reduce the check to a directory test.
+- Only a run that cleaned up and formatted every selected source may exit `0`.
+  A source OpenRewrite cannot parse is skipped, reported, and makes the run
+  incomplete, so both modes exit `2`. An assertion must never report success
+  for work prettify did not actually do.
 - Keep Maven-reactor discovery and type-aware cleanup independent of any one
   consuming repository.
 - Add comments where they preserve intent, constraints, or non-obvious design;

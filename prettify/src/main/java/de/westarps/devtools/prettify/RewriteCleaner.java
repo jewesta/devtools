@@ -25,11 +25,18 @@ import de.westarps.devtools.prettify.MavenReactor.Module;
  */
 final class RewriteCleaner {
 
-	record ResultOverlay(Map<Path, String> sources, List<Path> changedFiles) {
+	/**
+	 * @param skippedFiles
+	 *            sources OpenRewrite could not parse, mapped to the reason.
+	 *            Cleanup did not run for them, so the caller must not report
+	 *            the run as a completed check.
+	 */
+	record ResultOverlay(Map<Path, String> sources, List<Path> changedFiles, Map<Path, String> skippedFiles) {
 
 		ResultOverlay {
 			sources = Map.copyOf(sources);
 			changedFiles = List.copyOf(changedFiles);
+			skippedFiles = Map.copyOf(skippedFiles);
 		}
 
 	}
@@ -37,20 +44,22 @@ final class RewriteCleaner {
 	ResultOverlay clean(final Path repo, final SourceSelection selection,
 			final Map<Module, List<Path>> moduleClasspaths) {
 		if (selection.files().isEmpty()) {
-			return new ResultOverlay(Map.of(), List.of());
+			return new ResultOverlay(Map.of(), List.of(), Map.of());
 		}
 
 		final InMemoryExecutionContext context = new InMemoryExecutionContext(throwable -> {
 			throw new PrettifyException("OpenRewrite cleanup failed.", throwable);
 		});
-		final List<SourceFile> parsedSources = parseByModule(repo, selection, moduleClasspaths, context);
+		final Map<Path, String> skippedFiles = new LinkedHashMap<>();
+		final List<SourceFile> parsedSources = parseByModule(repo, selection, moduleClasspaths, context, skippedFiles);
 		final Recipe recipe = new JavaCleanup();
 		final RecipeRun recipeRun = recipe.run(new InMemoryLargeSourceSet(parsedSources), context);
-		return collectResults(repo, selection.files(), recipeRun.getChangeset().getAllResults());
+		return collectResults(repo, selection.files(), recipeRun.getChangeset().getAllResults(), skippedFiles);
 	}
 
 	private static List<SourceFile> parseByModule(final Path repo, final SourceSelection selection,
-			final Map<Module, List<Path>> moduleClasspaths, final InMemoryExecutionContext context) {
+			final Map<Module, List<Path>> moduleClasspaths, final InMemoryExecutionContext context,
+			final Map<Path, String> skippedFiles) {
 		final List<SourceFile> parsedSources = new ArrayList<>();
 		for (final Module module : selection.modules()) {
 			final List<Path> moduleFiles = selection.files().stream().filter(module::contains).toList();
@@ -61,7 +70,8 @@ final class RewriteCleaner {
 			try {
 				parsedSources.addAll(parse(repo, moduleFiles, classpath, context));
 			} catch (final RuntimeException e) {
-				parsedSources.addAll(parseSkippingUnparseable(repo, module, moduleFiles, classpath, context, e));
+				parsedSources.addAll(
+						parseSkippingUnparseable(repo, module, moduleFiles, classpath, context, e, skippedFiles));
 			}
 		}
 		return List.copyOf(parsedSources);
@@ -70,15 +80,18 @@ final class RewriteCleaner {
 	/**
 	 * Recovers from a source OpenRewrite cannot parse.
 	 * <p>
-	 * Cleanup is an enrichment; Eclipse formatting is the guarantee prettify
-	 * actually makes. A single source that trips a parser bug therefore must
-	 * not abort a whole repository sweep. The offending sources are identified,
-	 * reported, and excluded, and the rest of the module is parsed as one batch
-	 * so the remaining sources keep full type resolution.
+	 * A single source that trips a parser bug must not abort a whole repository
+	 * sweep, so the offending sources are identified and excluded and the rest
+	 * of the module is parsed as one batch, keeping full type resolution for
+	 * the sources that survive.
+	 * <p>
+	 * Recovery is not forgiveness. The excluded sources are recorded so the CLI
+	 * can report the run as incomplete; cleanup did not run for them and no
+	 * caller may read success as "these sources are clean".
 	 */
 	private static List<SourceFile> parseSkippingUnparseable(final Path repo, final Module module,
 			final List<Path> moduleFiles, final List<Path> classpath, final InMemoryExecutionContext context,
-			final RuntimeException moduleFailure) {
+			final RuntimeException moduleFailure, final Map<Path, String> skippedFiles) {
 
 		final List<Path> parseable = new ArrayList<>();
 		final Map<Path, String> unparseable = new LinkedHashMap<>();
@@ -101,9 +114,7 @@ final class RewriteCleaner {
 					moduleFailure);
 		}
 
-		System.err.println("Skipping OpenRewrite cleanup for " + unparseable.size() + " unparseable source(s) in "
-				+ module.displayPath() + ". Formatting still applies to them.");
-		unparseable.forEach((file, message) -> System.err.println(" - " + repo.relativize(file) + ": " + message));
+		skippedFiles.putAll(unparseable);
 
 		if (parseable.isEmpty()) {
 			return List.of();
@@ -130,7 +141,7 @@ final class RewriteCleaner {
 	}
 
 	private static ResultOverlay collectResults(final Path repo, final List<Path> writableFiles,
-			final List<Result> results) {
+			final List<Result> results, final Map<Path, String> skippedFiles) {
 		final Set<Path> writable = new LinkedHashSet<>(writableFiles);
 		final Map<Path, String> sources = new LinkedHashMap<>();
 		for (final Result result : results) {
@@ -144,7 +155,8 @@ final class RewriteCleaner {
 				sources.put(file, after);
 			}
 		}
-		return new ResultOverlay(sources, sources.keySet().stream().sorted(Comparator.naturalOrder()).toList());
+		return new ResultOverlay(sources, sources.keySet().stream().sorted(Comparator.naturalOrder()).toList(),
+				skippedFiles);
 	}
 
 }

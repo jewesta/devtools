@@ -47,6 +47,16 @@ run/prettify.sh --repo /path/to/project --assert
 Both a normal checkout and a linked Git worktree are accepted as a repository
 root.
 
+### Exit codes
+
+`0` means success, `1` means an assertion found files that would change, and
+`2` means the run could not be completed.
+
+Only a run that cleaned up and formatted every selected source exits `0`. If
+OpenRewrite cannot parse a source, that source is formatted but not cleaned up;
+prettify names it and exits `2` in both modes. An assertion that skipped work
+cannot vouch for the sources it skipped, so it does not report success.
+
 The matching `run/prettify.bat` launcher provides the same interface on
 Windows. Maven preparation is enabled by default so OpenRewrite can resolve
 types correctly; `--no-prepare` skips that build when reactor outputs are

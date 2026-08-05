@@ -16,6 +16,12 @@ import de.westarps.devtools.prettify.Prettifier.Plan;
  * <p>
  * Exit code {@code 0} means success, {@code 1} means an assertion found files
  * that would change, and {@code 2} means the operation could not be completed.
+ * <p>
+ * Only a run that cleaned up and formatted every selected source exits
+ * {@code 0}. A source OpenRewrite could not parse is formatted but not cleaned
+ * up, which makes the run incomplete: the assertion cannot vouch for that
+ * source, so both modes report {@code 2} rather than let a partial result look
+ * like a passing check.
  */
 public final class PrettifyCli {
 
@@ -83,7 +89,19 @@ public final class PrettifyCli {
 			if (arguments.mode == Mode.APPLY) {
 				plan.persist();
 				System.out.println("Prettify applied " + plan.changedFiles().size() + " file(s).");
-				return 0;
+				return plan.isComplete() ? 0 : reportIncomplete(plan);
+			}
+			/*
+			 * An incomplete run cannot support an assertion. Cleanup never ran
+			 * for the skipped sources, so "no file would change" says nothing
+			 * about them and must not be reported as a passing check.
+			 */
+			if (!plan.isComplete()) {
+				if (!plan.changedFiles().isEmpty()) {
+					System.err.println(
+							"Prettify assertion failed: " + plan.changedFiles().size() + " file(s) would change.");
+				}
+				return reportIncomplete(plan);
 			}
 			if (plan.changedFiles().isEmpty()) {
 				System.out.println("Prettify assertion passed.");
@@ -206,6 +224,19 @@ public final class PrettifyCli {
 		}
 		final Path fromWorkingDirectory = Path.of(System.getProperty("user.dir")).resolve(file).normalize();
 		return Files.exists(fromWorkingDirectory) ? fromWorkingDirectory : repo.resolve(file).normalize();
+	}
+
+	/**
+	 * Reports sources that were formatted but never cleaned up, and yields the
+	 * "could not complete" exit code. Prettify did not do everything it was
+	 * asked to do, so no mode may exit successfully.
+	 */
+	private static int reportIncomplete(final Plan plan) {
+		System.err.println("Prettify did not complete: OpenRewrite cleanup was skipped for "
+				+ plan.skippedFiles().size() + " source(s). They were formatted but not cleaned up.");
+		plan.skippedFiles()
+				.forEach((file, reason) -> System.err.println(" - " + plan.repo().relativize(file) + ": " + reason));
+		return 2;
 	}
 
 	private static void printReport(final Plan plan, final boolean prepared, final String selection) {

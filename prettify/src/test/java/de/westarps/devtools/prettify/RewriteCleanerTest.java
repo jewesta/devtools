@@ -2,16 +2,14 @@ package de.westarps.devtools.prettify;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -77,16 +75,10 @@ class RewriteCleanerTest {
 
 	@Test
 	void anUnparseableSourceIsSkippedSoTheRestOfTheModuleStillGetsCleanedUp() throws Exception {
-		write("src/main/java/example/Unparseable.java", UNPARSEABLE);
+		final Path unparseable = write("src/main/java/example/Unparseable.java", UNPARSEABLE);
 		final Path cleanable = write("src/main/java/example/Cleanable.java", CLEANABLE);
 
-		final ByteArrayOutputStream errors = new ByteArrayOutputStream();
-		final ResultOverlay overlay = cleanCapturingErrors(errors);
-
-		final String reported = errors.toString(UTF_8);
-		assertTrue(reported.contains("Unparseable.java"), reported);
-		assertTrue(reported.contains("Formatting still applies"), reported);
-		assertFalse(reported.contains("Cleanable.java"), reported);
+		final ResultOverlay overlay = clean();
 
 		/*
 		 * The surviving source still receives cleanup, which is the point of
@@ -94,31 +86,26 @@ class RewriteCleanerTest {
 		 */
 		assertEquals(List.of(cleanable), overlay.changedFiles());
 		assertTrue(overlay.sources().get(cleanable).contains("final int value"));
+
+		// The skip is recorded so the CLI can refuse to report success.
+		assertEquals(Set.of(unparseable), overlay.skippedFiles().keySet());
+		assertTrue(overlay.skippedFiles().get(unparseable).contains("@exception"), overlay.skippedFiles().toString());
 	}
 
 	@Test
-	void aModuleWithoutUnparseableSourcesReportsNothing() throws Exception {
+	void aModuleWithoutUnparseableSourcesRecordsNoSkips() throws Exception {
 		final Path cleanable = write("src/main/java/example/Cleanable.java", CLEANABLE);
 
-		final ByteArrayOutputStream errors = new ByteArrayOutputStream();
-		final ResultOverlay overlay = cleanCapturingErrors(errors);
+		final ResultOverlay overlay = clean();
 
-		assertEquals("", errors.toString(UTF_8));
+		assertTrue(overlay.skippedFiles().isEmpty(), overlay.skippedFiles().toString());
 		assertEquals(List.of(cleanable), overlay.changedFiles());
 	}
 
-	private ResultOverlay cleanCapturingErrors(final ByteArrayOutputStream errors) throws IOException {
+	private ResultOverlay clean() throws IOException {
 		final Module module = new Module(repo, Path.of(""), "example");
-		final List<Path> files = javaSourcesUnder(repo);
-		final SourceSelection selection = new SourceSelection(List.of(module), files, true);
-
-		final PrintStream original = System.err;
-		try (PrintStream capture = new PrintStream(errors, true, UTF_8)) {
-			System.setErr(capture);
-			return new RewriteCleaner().clean(repo, selection, Map.of(module, List.of()));
-		} finally {
-			System.setErr(original);
-		}
+		final SourceSelection selection = new SourceSelection(List.of(module), javaSourcesUnder(repo), true);
+		return new RewriteCleaner().clean(repo, selection, Map.of(module, List.of()));
 	}
 
 	private static List<Path> javaSourcesUnder(final Path root) throws IOException {

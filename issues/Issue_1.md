@@ -107,11 +107,30 @@ Two `@throws` tags alone do not reproduce the upstream bug; the wrapped
 was not isolated, so the regression test keeps a sample close to the real
 source that surfaced it.
 
+### Recovery is not success
+
+Skipping is recovery, not forgiveness. Cleanup did not run for the skipped
+sources, so a passing assertion would be claiming something prettify never
+checked.
+
+Only a run that cleaned up and formatted every selected source exits `0`. A
+skipped source makes the run incomplete and both modes exit `2` with the
+sources named. `--apply` still writes everything it could before reporting.
+This is deliberately louder than the alternative: an assertion whose job is to
+verify must not stay silent about work it did not do.
+
+The consequence is that a repository containing a source OpenRewrite cannot
+parse cannot get a green repository-wide assertion until the source is reworded
+or the upstream defect is fixed. That is the honest result.
+
 ## Verification
 
 - `mvn test` passed for the reactor: 21 tests, 0 failures, 0 errors.
-- A repository-wide sweep of RetroCrawler now completes: 391 sources, one
-  unparseable source named on stderr, assertion passed.
+- A repository-wide sweep of RetroCrawler now runs to completion instead of
+  aborting: 391 sources, 0 would change, one unparseable source named. It exits
+  `2` because that source was never cleaned up.
+- The same repository at `--select uncommitted`, which touches no unparseable
+  source, exits `0` with the assertion passed.
 - End-to-end from a RetroCrawler issue worktree: `--select uncommitted` found an
   untracked source, formatted it, and applied the OpenRewrite `final` cleanup.
 - Prettify checked itself through the new option. `--select uncommitted` flagged
@@ -122,9 +141,9 @@ source that surfaced it.
 
 - The OpenRewrite `visitThrows` defect is worth reporting upstream. Isolating
   the minimal Javadoc that triggers it is a prerequisite for a useful report.
-- Sources skipped by the recovery path receive formatting but no cleanup, so a
-  repository-wide `--assert` can pass while those sources still hold cleanup
-  findings. The warning names them; whether `--assert` should fail instead is a
-  policy decision nobody has needed yet.
+- No opt-out exists for a known-unparseable source. A project blocked on an
+  upstream defect currently cannot get a green repository-wide assertion. An
+  explicit allowance would restore that at the cost of reintroducing a way to
+  hide skipped work, so it should only be added if a real workflow needs it.
 - A `staged` scope was considered and left out. It suits a pre-commit hook more
   than an agent, and no caller needs it yet.
