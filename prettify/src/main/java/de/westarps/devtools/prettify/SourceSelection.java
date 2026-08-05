@@ -1,9 +1,5 @@
 package de.westarps.devtools.prettify;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,8 +11,8 @@ import java.util.Set;
 import de.westarps.devtools.prettify.MavenReactor.Module;
 
 /**
- * Selects either explicit Java files or all Git-tracked Java files and assigns
- * them to Maven modules for type-aware cleanup.
+ * Selects either explicit Java files or a {@link SourceScope} resolved through
+ * Git, and assigns the result to Maven modules for type-aware cleanup.
  */
 record SourceSelection(List<Module> modules, List<Path> files, boolean targeted) {
 
@@ -26,18 +22,32 @@ record SourceSelection(List<Module> modules, List<Path> files, boolean targeted)
 	}
 
 	static SourceSelection collect(final Path repo, final List<Module> reactorModules,
-			final List<String> requestedModules, final List<Path> requestedFiles) {
+			final List<String> requestedModules, final List<Path> requestedFiles, final SourceScope scope,
+			final String baseRef) {
 		final MavenReactor reactor = new MavenReactor();
 		final List<Module> moduleFilters = reactor.resolveRequested(requestedModules, reactorModules);
-		final boolean targeted = !requestedFiles.isEmpty();
-		final List<Path> candidates = targeted ? validateRequested(repo, requestedFiles) : trackedJavaFiles(repo);
+		final boolean explicitFiles = !requestedFiles.isEmpty();
+		/*
+		 * A narrowed selection leaves the rest of each module unanalysed, so
+		 * the module's own compiled output has to stay on the classpath for
+		 * type-aware cleanup. Only a repository-wide sweep rebuilds everything
+		 * it needs from source.
+		 */
+		final boolean targeted = explicitFiles || scope != SourceScope.REPOSITORY;
+		final List<Path> candidates = explicitFiles ? validateRequested(repo, requestedFiles)
+				: new GitSources(repo).javaSources(scope, baseRef);
 		final Set<Module> selectedModules = new LinkedHashSet<>();
 		final List<Path> selectedFiles = new ArrayList<>();
 
 		for (final Path file : candidates.stream().sorted().toList()) {
 			final Module owner = reactor.ownerOf(file, reactorModules);
 			if (!moduleFilters.isEmpty() && moduleFilters.stream().noneMatch(module -> module.contains(file))) {
-				if (targeted) {
+				/*
+				 * Naming a file that the module filter excludes is a
+				 * contradiction worth reporting. A discovered file outside the
+				 * filter is simply not selected, whichever scope discovered it.
+				 */
+				if (explicitFiles) {
 					throw new PrettifyException(
 							"Java source is outside the selected Maven module(s): " + repo.relativize(file) + ".");
 				}
@@ -70,44 +80,6 @@ record SourceSelection(List<Module> modules, List<Path> files, boolean targeted)
 			validated.add(file);
 		}
 		return List.copyOf(validated);
-	}
-
-	private static List<Path> trackedJavaFiles(final Path repo) {
-		try {
-			final Process process = new ProcessBuilder("git", "ls-files", "-z", "--", "*.java").directory(repo.toFile())
-					.redirectErrorStream(true).start();
-			final ByteArrayOutputStream output = new ByteArrayOutputStream();
-			process.getInputStream().transferTo(output);
-			final int exitCode = process.waitFor();
-			if (exitCode != 0) {
-				throw new PrettifyException(
-						"git ls-files failed with exit code " + exitCode + ": " + output.toString(UTF_8));
-			}
-			return parseNulSeparatedPaths(repo, output.toByteArray());
-		} catch (final IOException e) {
-			throw new PrettifyException("Failed to list tracked Java sources.", e);
-		} catch (final InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new PrettifyException("Interrupted while listing tracked Java sources.", e);
-		}
-	}
-
-	private static List<Path> parseNulSeparatedPaths(final Path repo, final byte[] output) {
-		final List<Path> paths = new ArrayList<>();
-		int start = 0;
-		for (int i = 0; i < output.length; i++) {
-			if (output[i] != 0) {
-				continue;
-			}
-			if (i > start) {
-				final Path path = repo.resolve(new String(output, start, i - start, UTF_8)).normalize();
-				if (Files.isRegularFile(path)) {
-					paths.add(path);
-				}
-			}
-			start = i + 1;
-		}
-		return List.copyOf(paths);
 	}
 
 	private static boolean containsPathElement(final Path path, final String name) {

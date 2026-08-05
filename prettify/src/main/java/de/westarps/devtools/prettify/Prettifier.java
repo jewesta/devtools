@@ -23,14 +23,25 @@ final class Prettifier {
 	record PendingWrite(Path file, String content) {
 	}
 
+	/**
+	 * @param skippedFiles
+	 *            sources that were formatted but never cleaned up because
+	 *            OpenRewrite could not parse them. A plan with any entry here
+	 *            describes an incomplete run.
+	 */
 	record Plan(Path repo, List<Module> modules, List<Path> sourceFiles, List<Path> cleanupChangedFiles,
-			List<PendingWrite> pendingWrites) {
+			List<PendingWrite> pendingWrites, Map<Path, String> skippedFiles) {
 
 		Plan {
 			modules = List.copyOf(modules);
 			sourceFiles = List.copyOf(sourceFiles);
 			cleanupChangedFiles = List.copyOf(cleanupChangedFiles);
 			pendingWrites = List.copyOf(pendingWrites);
+			skippedFiles = Map.copyOf(skippedFiles);
+		}
+
+		boolean isComplete() {
+			return skippedFiles.isEmpty();
 		}
 
 		List<Path> changedFiles() {
@@ -50,11 +61,11 @@ final class Prettifier {
 	}
 
 	Plan createPlan(final Path repo, final boolean prepare, final List<String> requestedModules,
-			final List<Path> requestedFiles) {
+			final List<Path> requestedFiles, final SourceScope scope, final String baseRef) {
 		final MavenReactor reactor = new MavenReactor();
 		final List<Module> reactorModules = reactor.read(repo);
 		final SourceSelection selection = SourceSelection.collect(repo, reactorModules, requestedModules,
-				requestedFiles);
+				requestedFiles, scope, baseRef);
 		final MavenRunner maven = new MavenRunner();
 		if (prepare) {
 			System.out.println("Preparing Maven modules for type-aware cleanup...");
@@ -78,7 +89,8 @@ final class Prettifier {
 				pendingWrites.add(new PendingWrite(file, formatted.content()));
 			}
 		}
-		return new Plan(repo, selection.modules(), selection.files(), cleanup.changedFiles(), pendingWrites);
+		return new Plan(repo, selection.modules(), selection.files(), cleanup.changedFiles(), pendingWrites,
+				cleanup.skippedFiles());
 	}
 
 	private static Map<Path, String> readSources(final List<Path> files) {

@@ -17,11 +17,45 @@ Maven repository to format:
 /path/to/devtools/run/prettify.sh --apply path/to/Source.java
 ```
 
+### Selecting sources
+
+Rather than assembling a file list yourself, let prettify derive one from Git
+with `--select`:
+
+```sh
+run/prettify.sh --apply  --select uncommitted   # staged, unstaged, and untracked
+run/prettify.sh --assert --select branch        # everything differing from the base branch
+run/prettify.sh --assert --select repository    # every tracked Java source (the default)
+```
+
+`uncommitted` is the everyday choice while working; `branch` is the check to run
+before opening a pull request. `branch` compares the working tree against the
+merge base with the base branch, so it covers committed and uncommitted work
+while ignoring commits that landed on the base after the fork. The base branch is
+detected from `origin/HEAD` with `origin/main`, `origin/master`, `main`, and
+`master` as fallbacks; override it with `--base <ref>`.
+
+Deleted sources drop out of every scope. `--select` cannot be combined with
+explicit file arguments, because those are two answers to the same question.
+
 Use `--repo` when the current working directory is not the target repository:
 
 ```sh
 run/prettify.sh --repo /path/to/project --assert
 ```
+
+Both a normal checkout and a linked Git worktree are accepted as a repository
+root.
+
+### Exit codes
+
+`0` means success, `1` means an assertion found files that would change, and
+`2` means the run could not be completed.
+
+Only a run that cleaned up and formatted every selected source exits `0`. If
+OpenRewrite cannot parse a source, that source is formatted but not cleaned up;
+prettify names it and exits `2` in both modes. An assertion that skipped work
+cannot vouch for the sources it skipped, so it does not report success.
 
 The matching `run/prettify.bat` launcher provides the same interface on
 Windows. Maven preparation is enabled by default so OpenRewrite can resolve
