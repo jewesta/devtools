@@ -16,6 +16,13 @@ These instructions apply to the entire repository.
   is bundled into the CLI. It can also be imported into Eclipse or STS.
 - Configure OpenRewrite cleanup in Java. Do not introduce a YAML recipe.
 - Preserve the `--assert` check-only mode and the `--apply` write mode.
+- Preserve the `--select` scopes (`repository`, `branch`, `uncommitted`). They
+  exist so a caller — especially an agent — can run one fixed command instead of
+  computing a file list with separate Git or Maven invocations. Prefer adding a
+  scope over pushing that work back onto callers.
+- A repository root is a directory holding `pom.xml` plus either a `.git`
+  directory or a `.git` file containing a `gitdir:` pointer. The second form is
+  a linked worktree; do not reduce the check to a directory test.
 - Keep Maven-reactor discovery and type-aware cleanup independent of any one
   consuming repository.
 - Add comments where they preserve intent, constraints, or non-obvious design;

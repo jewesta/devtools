@@ -50,11 +50,11 @@ final class Prettifier {
 	}
 
 	Plan createPlan(final Path repo, final boolean prepare, final List<String> requestedModules,
-			final List<Path> requestedFiles) {
+			final List<Path> requestedFiles, final SourceScope scope, final String baseRef) {
 		final MavenReactor reactor = new MavenReactor();
 		final List<Module> reactorModules = reactor.read(repo);
 		final SourceSelection selection = SourceSelection.collect(repo, reactorModules, requestedModules,
-				requestedFiles);
+				requestedFiles, scope, baseRef);
 		final MavenRunner maven = new MavenRunner();
 		if (prepare) {
 			System.out.println("Preparing Maven modules for type-aware cleanup...");
