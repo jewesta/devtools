@@ -13,3 +13,12 @@
 
 # OS
 .DS_Store
+
+# Local credentials, account settings and proxy runtime data
+.env
+.env.*
+/config/local/
+/secrets/
+**/client.properties
+**/mail-proxy.properties
+**/local-auth-proxy-*/
