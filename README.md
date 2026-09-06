@@ -61,3 +61,19 @@ The matching `run/prettify.bat` launcher provides the same interface on
 Windows. Maven preparation is enabled by default so OpenRewrite can resolve
 types correctly; `--no-prepare` skips that build when reactor outputs are
 already current.
+
+## Local auth proxy for AI
+
+`local-auth-proxy` lets local applications and AI tools access a configured service
+using temporary local credentials while the broker retains the real credential.
+The first implementation supports IMAP through nginx; HTTP support is future work.
+It is independent of Spring and any consuming project.
+
+```sh
+mvn -pl local-auth-proxy -am clean verify
+run/local-auth-proxy.sh imap /absolute/path/to/mail-proxy.properties
+```
+
+Read the [setup and security boundaries](local-auth-proxy/README.md) before use.
+The launcher prompts in the user's terminal and leaves the proxy running until
+stopped. Use `-Dnginx.tests=true` to enable synthetic local TLS integration tests.

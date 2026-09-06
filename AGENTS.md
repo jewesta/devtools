@@ -8,6 +8,8 @@ These instructions apply to the entire repository.
   development tools.
 - `prettify` is a standalone Java cleanup and formatting CLI. It must not
   depend on any consuming project.
+- `local-auth-proxy` is an independent credential broker, initially for IMAP.
+  Do not couple it to Spring or to a consuming project.
 - Java implementation packages use the `de.westarps.devtools` namespace.
 
 ## Prettify
@@ -66,3 +68,19 @@ These instructions apply to the entire repository.
 - Preserve unrelated user changes in the working tree.
 - Prefer small, reviewable changes and avoid unrelated refactoring in issue
   branches.
+
+## Local Auth Proxy
+
+- Read `local-auth-proxy/README.md` for the credential boundary and protocol scope.
+- Real passwords are entered only in the owner's ordinary terminal. Never request
+  them in a captured tool session, or put them in files, arguments, environment
+  variables, logs, fixtures, or issue notes.
+- Keep real account settings and service discovery results in the consuming
+  project's canonical private store. Do not migrate that data into devtools.
+- Keep proxy endpoints on loopback, upstream TLS verified, and local client
+  authentication separate from the helper's own authentication.
+- Do not contact real services in automated tests. Run
+  `mvn -pl local-auth-proxy -am -Dnginx.tests=true clean verify` against synthetic
+  local TLS fixtures when changing proxy behavior or packaging.
+- Do not stop or replace an owner's running proxy as part of builds or tests.
+  The proxy forwards authenticated commands and does not enforce read-only IMAP.
